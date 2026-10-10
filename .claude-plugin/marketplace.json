@@ -9,7 +9,7 @@
     {
       "name": "trouble",
       "version": "1.0.0",
-      "description": "Stop looping on a bug you cannot close. /trouble is a four-minds debug protocol — Data, Sherlock Holmes, Linus Torvalds, and Brian Cox — that ranks hypotheses with Bayesian math and refuses a fix until they unanimously agree.",
+      "description": "Stop looping on a bug you cannot close. /trouble is a four-minds debug protocol \u2014 Data, Sherlock Holmes, Linus Torvalds, and Brian Cox \u2014 that ranks hypotheses with Bayesian math and refuses a fix until they unanimously agree.",
       "category": "development",
       "author": {
         "name": "coldcanuk"
@@ -38,10 +38,7 @@
         "bayesian",
         "agent-skills"
       ],
-      "source": {
-        "type": "local",
-        "path": "./plugins/trouble"
-      }
+      "source": "./plugins/trouble"
     }
   ]
 }
