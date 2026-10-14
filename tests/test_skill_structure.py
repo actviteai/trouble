@@ -39,23 +39,13 @@ def plugin_source_path(entry: dict) -> str:
     raise AssertionError(f"plugin entry has no resolvable source path: {entry!r}")
 
 
-def parse_skill_md(text: str) -> tuple[str, str]:
+def split_skill_md(text: str) -> tuple[str, str]:
     if not text.startswith("---"):
         raise AssertionError("SKILL.md must start with YAML frontmatter ---")
     parts = text.split("---", 2)
-    if len(parts) < 3:
+    if len(parts) < 3 or not parts[1].strip() or not parts[2].strip():
         raise AssertionError("SKILL.md frontmatter is not closed")
-    frontmatter = parts[1]
-    body = parts[2]
-    name = None
-    for raw in frontmatter.splitlines():
-        line = raw.strip()
-        if line.startswith("name:"):
-            name = line.split(":", 1)[1].strip().strip("\"'")
-            break
-    if not name:
-        raise AssertionError("SKILL.md frontmatter is missing name:")
-    return name, body
+    return parts[1], parts[2]
 
 
 def tracked_paths() -> list[Path]:
@@ -96,14 +86,18 @@ class TestMarketplaceCatalogs(unittest.TestCase):
         self.assertIsInstance(source, str)
         self.assertEqual(Path(source).as_posix().rstrip("/"), "plugins/trouble")
 
-    def test_grok_and_claude_source_is_local_object(self) -> None:
-        for rel in (".grok-plugin/marketplace.json", ".claude-plugin/marketplace.json"):
-            with self.subTest(catalog=rel):
-                data = json.loads((ROOT / rel).read_text(encoding="utf-8"))
-                source = data["plugins"][0]["source"]
-                self.assertIsInstance(source, dict)
-                self.assertEqual(source.get("type"), "local")
-                self.assertEqual(source.get("path"), "./plugins/trouble")
+    def test_grok_source_is_local_object(self) -> None:
+        data = json.loads((ROOT / ".grok-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        source = data["plugins"][0]["source"]
+        self.assertIsInstance(source, dict)
+        self.assertEqual(source.get("type"), "local")
+        self.assertEqual(source.get("path"), "./plugins/trouble")
+
+    def test_claude_source_is_string_path(self) -> None:
+        data = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
+        source = data["plugins"][0]["source"]
+        self.assertIsInstance(source, str)
+        self.assertEqual(source, "./plugins/trouble")
 
     def test_agents_catalog_has_codex_policy_shape(self) -> None:
         data = json.loads(
@@ -129,18 +123,20 @@ class TestShippedSkill(unittest.TestCase):
     def test_skill_yaml_name_and_protocol_body(self) -> None:
         self.assertTrue(SKILL_MD.is_file())
         text = SKILL_MD.read_text(encoding="utf-8")
-        name, body = parse_skill_md(text)
-        self.assertEqual(name, "trouble")
-        self.assertIn("/trouble", text)
-        for person in (
-            "Data",
-            "Sherlock Holmes",
-            "Linus Torvalds",
-            "Brian Cox",
-        ):
+        frontmatter, body = split_skill_md(text)
+        self.assertLessEqual(len(text), 12000, "protocol YAML grew past the token budget")
+        self.assertRegex(frontmatter, r"(?m)^name:\s*trouble\s*$", "frontmatter name must be trouble")
+        self.assertIn("/trouble", frontmatter)
+        self.assertNotIn("\n## ", body, "body must stay YAML, not markdown sections")
+        self.assertIn('announce: "Using the four-minds debug protocol"', body)
+        self.assertIn("order: [announce, mode, exit, inputs, 0, 1, 2, 3, 4, 5, 6, gate, 7, verdict, score]", body)
+        self.assertRegex(body, r"(?m)^score:", "order id score must be a top-level key")
+        for person in ("Data", "Sherlock Holmes", "Linus Torvalds", "Brian Cox"):
             self.assertIn(person, body)
-        self.assertIn("## Phase 3 — Bayesian evaluation", body)
-        self.assertIn("Unanimous agreement gate", body)
+        self.assertIn("name: Bayesian evaluation", body)
+        self.assertIn("P(H_i|E)", body)
+        self.assertIn("name: Unanimous agreement gate", body)
+        self.assertIn('each: ["yes|no", N/10, one line why]', body)
         self.assertIn("TROUBLE_VERDICT_BEGIN", body)
         self.assertIn("TROUBLE_VERDICT_END", body)
 
@@ -172,6 +168,23 @@ class TestShippedSkill(unittest.TestCase):
         )
         self.assertIn("Do not\nlook for `.deepseek-plugin/marketplace.json`", readme)
         self.assertIn("trouble-skill.jpg", readme)
+        for heading in (
+            "### Hermes Agent",
+            "### Claude\n",
+            "### Claude Code",
+            "### GitHub Copilot CLI",
+            "### Grok",
+            "### DeepSeek Harness",
+            "### Cline",
+            "### OpenCode",
+            "### NeMo Agent Toolkit",
+        ):
+            self.assertIn(heading, readme)
+        self.assertIn("hermes skills install coldcanuk/trouble/plugins/trouble/skills/trouble", readme)
+        self.assertIn("npx skills add coldcanuk/trouble --skill trouble --full-depth -a opencode -g", readme)
+        self.assertIn("~/.cline/skills/", readme)
+        self.assertIn("additional_instructions: file://plugins/trouble/skills/trouble/SKILL.md", readme)
+        self.assertIn("Upload skill", readme)
         hero = ROOT / "trouble-skill.jpg"
         self.assertTrue(hero.is_file(), "README hero image trouble-skill.jpg must be in the repo")
         self.assertEqual(hero.read_bytes()[:3], b"\xff\xd8\xff")
