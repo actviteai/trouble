@@ -1,0 +1,3 @@
+# trouble
+
+@AGENTS.md
